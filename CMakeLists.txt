@@ -5,10 +5,11 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
 find_package(fmt REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(spdlog REQUIRED)
 
-include_directories(include)
-include_directories( ${OpenCV_INCLUDE_DIRS} )
+include_directories(libs)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
-add_executable(PlyTest src/main.cpp)
+add_executable(PlyTest src/main.cpp src/clustering/clustering.cpp src/clustering/clustering.h)
 target_link_libraries(PlyTest fmt::fmt)
-target_link_libraries( PlyTest ${OpenCV_LIBS} )
+target_link_libraries(PlyTest ${OpenCV_LIBS})

@@ -27,12 +27,12 @@ auto cluster(const std::vector<PointRGB>& points, int num_of_clusters) {
     filtered_points[i].cluster_num = 0;
   }
 
-  LOOP_NUM = 0;
-  //#pragma clang loop perforate(enable)
   for (int i = 1; i < num_of_clusters; ++i) {
     auto new_head_index = -1;
     auto new_head_distance = 0.f;
 
+    LOOP_NUM = 0;
+    #pragma clang loop perforate(enable)
     for (int j = 0; j < filtered_points.size(); ++j) {
       if (new_head_distance < filtered_points[j].cluster_distance) {
         new_head_index = j;
@@ -40,11 +40,15 @@ auto cluster(const std::vector<PointRGB>& points, int num_of_clusters) {
       }
     }
 
+    if(new_head_distance == 0.){
+      throw "Exceeded";
+    }
+
     filtered_points[new_head_index].cluster_num = i;
     filtered_points[new_head_index].cluster_head = true;
 
     LOOP_NUM = 1;
-    //#pragma clang loop perforate(enable)
+    #pragma clang loop perforate(enable)
     for (int j = 0; j < filtered_points.size(); ++j) {
       auto new_distance = distance(filtered_points[new_head_index], filtered_points[j]);
       if (new_distance < filtered_points[j].cluster_distance) {
@@ -96,7 +100,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
                   bool offset_start) {
   auto image_name = image_name_ext.substr(0, image_name_ext.find('.'));
 
-  spdlog::info("Loading image {}", image_name_ext);
+  logger->info("Loading image {}", image_name_ext);
   cv::Mat image = cv::imread(base_path + "/" + image_name_ext);
   std::set<cv::Vec3b, VecCompare<cv::Vec3b>> image_unique_colors_set(image.begin<cv::Vec3b>(), image.end<cv::Vec3b>());
 
@@ -104,7 +108,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
   std::transform(image_unique_colors_set.begin(), image_unique_colors_set.end(), image_unique_colors.begin(),
                  [](const cv::Vec3b& p) { return PointRGB(p); });
 
-  spdlog::info("Loaded image with size {}x{} and {} unique colors", image.rows, image.cols, image_unique_colors.size());
+  logger->info("Loaded image with size {}x{} and {} unique colors", image.rows, image.cols, image_unique_colors.size());
 
   std::vector<std::array<int, 2>> perf_ff;
   if (combs) {
@@ -126,7 +130,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
       std::vector<long> durations;
       for (int repeat = 0; repeat < repeat_f; ++repeat) {
         LOOP0_PERF = p_f[0];
-        LOOP1_PERF = p_f[0];
+        LOOP1_PERF = p_f[1];
 
         auto start_time = std::chrono::steady_clock::now();
         auto clustered_points = offset_start ? clusterOffset(image_unique_colors, num_of_clusters)
@@ -134,25 +138,37 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
         auto end_time = std::chrono::steady_clock::now();
         auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
-        spdlog::info("Finished clustering {} {}/{} with c:{}, p1:{}, p2:{}, num_of_points:{}  duration: {}",
+        logger->info("Finished clustering {} {}/{} with c:{}, p1:{}, p2:{}, num_of_points:{}  duration: {}",
                      image_name_ext, repeat + 1, repeat_f, c_f, p_f[0], p_f[1], num_of_clusters, total_time);
 
         std::vector<cv::Vec3f> output_colors(num_of_clusters);
         std::vector<int> cluster_size(num_of_clusters);
-        std::map<cv::Vec3b, int, VecCompare<cv::Vec3b>> og_to_cluster_map;
         for (const auto& point : clustered_points) {
           output_colors[point.cluster_num] += point.pos;
           cluster_size[point.cluster_num]++;
-          og_to_cluster_map.emplace(point.pos, point.cluster_num);
         }
 
         for (int i = 0; i < output_colors.size(); ++i) {
           output_colors[i] /= cluster_size[i];
         }
 
+        std::map<cv::Vec3b, cv::Vec3b, VecCompare<cv::Vec3b>> og_to_cluster_map;
+        for (const auto& unique_color : image_unique_colors) {
+          float min_distance = std::numeric_limits<float>::max();
+          int min_index = -1;
+          for (int i = 0; i < output_colors.size(); ++i) {
+            auto dis = distance(unique_color, output_colors[i]);
+            if(dis < min_distance){
+              min_distance = dis;
+              min_index = i;
+            }
+          }
+          og_to_cluster_map.emplace(unique_color.pos, output_colors[min_index]);
+        }
+
         cv::Mat output_image(image.size(), image.type());
         for (int i = 0; i < output_image.rows * output_image.cols; ++i) {
-          output_image.at<cv::Vec3b>(i) = output_colors.at(og_to_cluster_map.at(image.at<cv::Vec3b>(i)));
+          output_image.at<cv::Vec3b>(i) = og_to_cluster_map.at(image.at<cv::Vec3b>(i));
         }
 
         auto image_output_name =
@@ -160,13 +176,13 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
                   : fmt::format("{}/{}#c{}_p{}.png", output_path, image_name, c_f, p_f[0]);
 
         if (!cv::imwrite(image_output_name, output_image)) {
-          spdlog::error("Error writing image");
+          logger->error("Error writing image");
         }
         durations.emplace_back(total_time);
       }
 
       if (combs)
-        res[fmt::format("c{}_p{},{}", c_f, p_f[0], p_f[1])] = {{"num_of_points", num_of_clusters},
+        res[fmt::format("c{}_p{}_{}", c_f, p_f[0], p_f[1])] = {{"num_of_points", num_of_clusters},
                                                                {"clustering_time", durations}};
       else
         res[fmt::format("c{}_p{}", c_f, p_f[0])] = {{"num_of_points", num_of_clusters}, {"clustering_time", durations}};
@@ -180,7 +196,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
                bool offset_start) {
   auto pc_name = pc_name_ext.substr(0, pc_name_ext.find('.'));
 
-  spdlog::info("Loading point cloud {}", pc_name_ext);
+  logger->info("Loading point cloud {}", pc_name_ext);
 
   rapidcsv::Document pc_csv(base_path + "/" + pc_name_ext, rapidcsv::LabelParams(0, -1));
 
@@ -189,7 +205,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
     auto row = pc_csv.GetRow<float>(i);
     pc.emplace_back(cv::Vec3f(row[0], row[1], row[2]));
   }
-  spdlog::info("Loaded pc with size {}", pc.size());
+  logger->info("Loaded pc with size {}", pc.size());
 
   std::vector<std::array<int, 2>> perf_ff;
   if (combs) {
@@ -211,7 +227,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
       std::vector<long> durations;
       for (int repeat = 0; repeat < repeat_f; ++repeat) {
         LOOP0_PERF = p_f[0];
-        LOOP1_PERF = p_f[0];
+        LOOP1_PERF = p_f[1];
 
         auto start_time = std::chrono::steady_clock::now();
 
@@ -219,7 +235,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
 
         auto end_time = std::chrono::steady_clock::now();
         auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-        spdlog::info("Finished clustering {} {}/{} with c:{}, p1:{}, p2:{}, num_of_points:{}  duration: {}",
+        logger->info("Finished clustering {} {}/{} with c:{}, p1:{}, p2:{}, num_of_points:{}  duration: {}",
                      pc_name_ext, repeat + 1, repeat_f, c_f, p_f[0], p_f[1], num_of_clusters, total_time);
 
         rapidcsv::Document outdoc;
@@ -239,10 +255,10 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
       }
 
       if (combs)
-        res[fmt::format("c{}_p{}", c_f, p_f[0])] = {{"num_of_points", num_of_clusters}, {"clustering_time", durations}};
-      else
-        res[fmt::format("c{}_p{},{}", c_f, p_f[0], p_f[1])] = {{"num_of_points", num_of_clusters},
+        res[fmt::format("c{}_p{}_{}", c_f, p_f[0], p_f[1])] = {{"num_of_points", num_of_clusters},
                                                                {"clustering_time", durations}};
+      else
+        res[fmt::format("c{}_p{}", c_f, p_f[0])] = {{"num_of_points", num_of_clusters}, {"clustering_time", durations}};
     }
   }
   final_results[pc_name] = res;

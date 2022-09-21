@@ -2,6 +2,7 @@
 #define PLYTEST_CLUSTERING_H
 #include <rapidcsv.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <fmt/ostream.h>
 
 #include <json.hpp>
@@ -11,6 +12,7 @@
 typedef cv::Vec<float, 1> Vec1f;
 typedef cv::Vec<int, 1> Vec1i;
 
+inline auto logger = spdlog::stdout_color_mt("clustering");
 inline auto final_results = nlohmann::json();
 
 struct PointRGB {

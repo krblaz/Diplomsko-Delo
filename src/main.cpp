@@ -19,14 +19,14 @@ auto stringToIntVector(std::string string) {
 int main(int argc, char* argv[]) {
   argparse::ArgumentParser program("ClusterPC");
 
-  program.add_argument("--base_path");
-  program.add_argument("--output_path");
-  program.add_argument("-c_f");
-  program.add_argument("-p_f");
+  program.add_argument("--base_path").help("Path to input files folder"); //
+  program.add_argument("--output_path").help("Path to output files folder");
+  program.add_argument("-c_f").help("List of comma delimited clustering factors");
+  program.add_argument("-p_f").help("List of comma delimited peroration factors");
 
-  program.add_argument("--mode");
-  program.add_argument("--comb").implicit_value(true).default_value(false);
-  program.add_argument("--disable_offset_start").implicit_value(false).default_value(true);
+  program.add_argument("--mode").help("image or pc");
+  program.add_argument("--comb").implicit_value(true).default_value(false).help("Toggle separate perforation for two loops. Default disabled");
+  program.add_argument("--disable_offset_start").implicit_value(false).default_value(true).help("Toggle offset perforation. Default enabled");
 
   try {
     program.parse_args(argc, argv);

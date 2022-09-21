@@ -100,16 +100,19 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
                   bool offset_start) {
   auto image_name = image_name_ext.substr(0, image_name_ext.find('.'));
 
+  //Load image
   logger->info("Loading image {}", image_name_ext);
   cv::Mat image = cv::imread(base_path + "/" + image_name_ext);
   std::set<cv::Vec3b, VecCompare<cv::Vec3b>> image_unique_colors_set(image.begin<cv::Vec3b>(), image.end<cv::Vec3b>());
 
+  //Get unique colors
   std::vector<PointRGB> image_unique_colors(image_unique_colors_set.size());
   std::transform(image_unique_colors_set.begin(), image_unique_colors_set.end(), image_unique_colors.begin(),
                  [](const cv::Vec3b& p) { return PointRGB(p); });
 
   logger->info("Loaded image with size {}x{} and {} unique colors", image.rows, image.cols, image_unique_colors.size());
 
+  //Set perforation factors
   std::vector<std::array<int, 2>> perf_ff;
   if (combs) {
     for (const auto& p_f1 : perf_f) {
@@ -123,6 +126,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
     }
   }
 
+
   nlohmann::json res;
   for (const auto& c_f : cluster_f) {
     auto num_of_clusters = image_unique_colors.size() / c_f;
@@ -132,6 +136,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
         LOOP0_PERF = p_f[0];
         LOOP1_PERF = p_f[1];
 
+        //Use clustering
         auto start_time = std::chrono::steady_clock::now();
         auto clustered_points = offset_start ? clusterOffset(image_unique_colors, num_of_clusters)
                                              : cluster(image_unique_colors, num_of_clusters);
@@ -141,6 +146,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
         logger->info("Finished clustering {} {}/{} with c:{}, p1:{}, p2:{}, num_of_points:{}  duration: {}",
                      image_name_ext, repeat + 1, repeat_f, c_f, p_f[0], p_f[1], num_of_clusters, total_time);
 
+        //Map output colors to original colors
         std::vector<cv::Vec3f> output_colors(num_of_clusters);
         std::vector<int> cluster_size(num_of_clusters);
         for (const auto& point : clustered_points) {
@@ -166,6 +172,7 @@ void clusterImage(const std::string& base_path, const std::string& output_path, 
           og_to_cluster_map.emplace(unique_color.pos, output_colors[min_index]);
         }
 
+        //Create and write output image
         cv::Mat output_image(image.size(), image.type());
         for (int i = 0; i < output_image.rows * output_image.cols; ++i) {
           output_image.at<cv::Vec3b>(i) = og_to_cluster_map.at(image.at<cv::Vec3b>(i));
@@ -200,6 +207,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
 
   rapidcsv::Document pc_csv(base_path + "/" + pc_name_ext, rapidcsv::LabelParams(0, -1));
 
+  //Load point cloud from CSV file
   std::vector<PointRGB> pc;
   for (int i = 0; i < pc_csv.GetRowCount(); ++i) {
     auto row = pc_csv.GetRow<float>(i);
@@ -207,6 +215,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
   }
   logger->info("Loaded pc with size {}", pc.size());
 
+  //Set perforation factors
   std::vector<std::array<int, 2>> perf_ff;
   if (combs) {
     for (const auto& p_f1 : perf_f) {
@@ -229,6 +238,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
         LOOP0_PERF = p_f[0];
         LOOP1_PERF = p_f[1];
 
+        //Use clustering
         auto start_time = std::chrono::steady_clock::now();
 
         auto clustered_points = offset_start ? clusterOffset(pc, num_of_clusters) : cluster(pc, num_of_clusters);
@@ -238,6 +248,7 @@ void clusterPC(const std::string& base_path, const std::string& output_path, con
         logger->info("Finished clustering {} {}/{} with c:{}, p1:{}, p2:{}, num_of_points:{}  duration: {}",
                      pc_name_ext, repeat + 1, repeat_f, c_f, p_f[0], p_f[1], num_of_clusters, total_time);
 
+        //Write filtered point cloud
         rapidcsv::Document outdoc;
         outdoc.InsertRow(-1, pc_csv.GetColumnNames());
         auto row = 0;
